@@ -190,13 +190,10 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직 (백분율 기호 필수 검증 적용)
-                        if "유통가능물량" in d_table_text:
-                            first_rows_text = "".join([re.sub(r'\s+', '', r.get_text()) for r in d_table.find_all("tr")[:3]])
-                            if "유통가능물량" not in first_rows_text and "매각제한" not in first_rows_text:
-                                continue
-
-                            print(f"  👉 [{idx}번 테이블] 검증된 유통가능물량 진짜 표 적중 성공")
+                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직 (키워드 3종 삼각 교차 검증)
+                        # 💡 표 내부에 '유통가능물량', '주식수', '지분율' 세 단어가 모두 완벽히 존재할 때만 진입합니다.
+                        if "유통가능물량" in d_table_text and "주식수" in d_table_text and "지분율" in d_table_text:
+                            print(f"  👉 [{idx}번 테이블] 3종 키워드(유통가능물량+주식수+지분율) 검증 완료된 진짜 표 적중 성공")
                             d_rows = d_table.find_all("tr")
 
                             for d_row in reversed(d_rows):
@@ -207,9 +204,9 @@ def run_stock_crawler():
                                 cells_list = [re.sub(r'\s+', '', cell.get_text()) for cell in d_cells]
                                 row_split_text = "|".join(cells_list)
 
-                                # 💡 [보정 핵심] '합계' 명사형 검사뿐만 아니라, 행 전체 텍스트에 백분율(%) 기호가 반드시 붙어있는지 교차 검증합니다.
-                                if ("합계" in cells_list or any(item == "합계" or item == "총합계" for item in cells_list)) and "%" in row_split_text:
-                                    print(f"    - '합계(백분율 포함)' 결산 행 안전 분할 포착: '{row_split_text}'")
+                                # '합계' 또는 '총합계' 칸이 명확히 존재하는 행만 최종 타겟팅
+                                if "합계" in cells_list or any(item == "합계" or item == "총합계" for item in cells_list):
+                                    print(f"    - '합계' 결산 행 안전 분할 포착: '{row_split_text}'")
 
                                     valid_items = []
                                     for item in cells_list:
@@ -219,15 +216,15 @@ def run_stock_crawler():
                                     print(f"    - 구분 정제된 유효 스펙 데이터 배열: {valid_items}")
 
                                     if len(valid_items) >= 2:
-                                        final_percent = valid_items[-1]
-                                        final_shares = valid_items[-2]
+                                        final_percent = valid_items[-1] # 맨 오른쪽 백분율
+                                        final_shares = valid_items[-2]  # 그 직전 주식수
 
                                         if final_percent != "100.00%":
                                             floating_shares = f"{final_shares}주({final_percent})"
-                                            print(f"    - 🎯 고스트 테이블 버그 완전 해결 성공: {floating_shares}")
+                                            print(f"    - 🎯 테이블 오인 버그 완전 해결 성공: {floating_shares}")
                                             break
                             if floating_shares:
-                                break
+                                break  # 진짜 표에서 정확히 뽑아냈으므로 다른 테이블 탐색 조기 종료
 
                     # 3. OpenAI 요약 파트
                     page_text = detail_soup.get_text()
