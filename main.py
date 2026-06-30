@@ -169,7 +169,7 @@ def run_stock_crawler():
                 if detail_res.status_code == 200:
                     detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
-                    # 1. 💡 확정공모가 완전 추적 루프
+                    # 1. 확정공모가 완전 추적 루프
                     detail_tables = detail_soup.find_all("table")
                     for d_table in detail_tables:
                         if "확정공모가" in d_table.get_text():
@@ -186,50 +186,50 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                    # 2. 🎯 [보완] 유통가능물량 진짜 표 추적 및 가공 루프 (tbody 파싱 불안정성 완벽 보정)
-                    for t_idx, d_table in enumerate(detail_tables):
+                    # 2. 🎯 [최종 보완] 3종 세트 기반 유통가능물량 진짜 표 저격 엔진 가동
+                    for idx, d_table in enumerate(detail_tables):
                         table_rows = d_table.find_all("tr")
+                        if len(table_rows) < 3:
+                            continue
 
-                        # 💡 표 상단의 헤더 부분(1번째 혹은 2번째 줄)을 조합해 진짜 유통가능물량 표인지 체크합니다.
-                        if len(table_rows) >= 2:
-                            header_cells = table_rows[0].find_all(["th", "td"]) + table_rows[1].find_all(["th", "td"])
-                            header_combined_text = "".join(
-                                [re.sub(r'\s+', '', cell.get_text()) for cell in header_cells])
+                        # 💡 상단 헤더 영역(0~3번 행)을 묶어 진짜 유통물량 식별 기호 3종이 존재하는지 검증
+                        header_chunk_text = "".join([re.sub(r'\s+', '', r.get_text()) for r in table_rows[:4]])
 
-                            if "유통가능물량" in header_combined_text:
-                                print(f"  👉 [{t_idx}번 테이블] 유통가능물량 진짜 표 직접 저격 성공")
-                                table_summary = re.sub(r'\s+', ' ', d_table.get_text()).strip()
-                                print(f"    - [테이블 매칭본문 스냅샷]: '{table_summary[:150]}...'")
+                        if "유통가능물량" in header_chunk_text and "주식수" in header_chunk_text and "지분율" in header_chunk_text:
+                            print(f"  👉 [{idx}번 테이블] 3종 키워드 교차 스캔으로 진짜 유통 표 저격 적중")
+                            table_summary = re.sub(r'\s+', ' ', d_table.get_text()).strip()
+                            print(f"    - [표 본문 스냅샷]: '{table_summary[:120]}...'")
 
-                                for d_row in reversed(table_rows):
-                                    d_cells = d_row.find_all(["th", "td"])
-                                    if not d_cells:
-                                        continue
+                            for d_row in reversed(table_rows):
+                                d_cells = d_row.find_all(["th", "td"])
+                                if not d_cells:
+                                    continue
 
-                                    cells_list = [re.sub(r'\s+', '', cell.get_text()) for cell in d_cells]
-                                    row_split_text = "|".join(cells_list)
+                                cells_list = [re.sub(r'\s+', '', cell.get_text()) for cell in d_cells]
+                                row_split_text = "|".join(cells_list)
 
-                                    # 진짜 결산 행 추적
-                                    if "합계" in cells_list or any(item == "합계" or item == "총합계" for item in cells_list):
-                                        print(f"    - '합계' 결산 행 안전 분할 포착: '{row_split_text}'")
+                                # '총계' 혹은 '합계' 결산 행 추적
+                                if "합계" in cells_list or "총계" in cells_list or any(
+                                        item in ["합계", "총계", "총합계"] for item in cells_list):
+                                    print(f"    - '합계' 결산 행 안전 분할 포착: '{row_split_text}'")
 
-                                        valid_items = []
-                                        for item in cells_list:
-                                            if re.match(r'^[\d,]+$', item) or re.match(r'^[\d.]+\%$', item):
-                                                valid_items.append(item)
+                                    valid_items = []
+                                    for item in cells_list:
+                                        if re.match(r'^[\d,]+$', item) or re.match(r'^[\d.]+\%$', item):
+                                            valid_items.append(item)
 
-                                        print(f"    - 구분 정제된 유효 스펙 데이터 배열: {valid_items}")
+                                    print(f"    - 구분 정제된 유효 스펙 데이터 배열: {valid_items}")
 
-                                        if len(valid_items) >= 2:
-                                            final_percent = valid_items[-1]
-                                            final_shares = valid_items[-2]
+                                    if len(valid_items) >= 2:
+                                        final_percent = valid_items[-1]
+                                        final_shares = valid_items[-2]
 
-                                            if final_percent != "100.00%":
-                                                floating_shares = f"{final_shares}주({final_percent})"
-                                                print(f"    - 🎯 완벽 수집 성공 결과: {floating_shares}")
-                                                break
-                                if floating_shares:
-                                    break
+                                        if final_percent != "100.00%":
+                                            floating_shares = f"{final_shares}주({final_percent})"
+                                            print(f"    - 🎯 완벽 수집 성공 결과: {floating_shares}")
+                                            break
+                            if floating_shares:
+                                break
 
                     # 3. OpenAI 요약 파트
                     page_text = detail_soup.get_text()
