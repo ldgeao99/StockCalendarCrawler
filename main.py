@@ -7,7 +7,7 @@ import ssl
 import re
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-from openai import OpenAI
+from openai import OpenAI  # 💡 OpenAI 최신 규격 라이브러리 로드
 
 # 1. 환경 설정 및 클라이언트 초기화
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json"
@@ -15,6 +15,7 @@ db = firestore.Client()
 events_ref = db.collection("events")
 logs_ref = db.collection("crawler_logs")
 
+# GitHub Actions 환경변수 또는 로컬 환경변수에서 API Key 자동 로드
 ai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
@@ -32,11 +33,12 @@ def summarize_business_with_ai(stock_name, business_raw_text):
     핵심 비즈니스 모델만 10~20자 내외 명사형으로 정밀 요약해 옵니다.
     """
     if not business_raw_text or "사업현황" not in business_raw_text:
-        return f"{stock_name} 상장 일정 자동 등록"
+        return f"참조 가능한 정보 없음"
 
     try:
+        # 프롬프트 엔지니어링을 통해 노이즈를 걸러내고 핵심 결과값 규격 강제
         response = ai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o-mini",  # 가성비 극대화 모델
             messages=[
                 {
                     "role": "system",
@@ -60,9 +62,6 @@ def summarize_business_with_ai(stock_name, business_raw_text):
             temperature=0.4
         )
         ai_result = response.choices[0].message.content.strip()
-
-        # [코드 안전장치] 문장 맨 앞바닥에 붙은 대시(-), 점(•), 공백 강제 제거
-        ai_result = re.sub(r'^[\s\-\•\.\,\_]+', '', ai_result)
         return f"{ai_result}"
 
     except Exception as e:
@@ -147,13 +146,11 @@ def run_stock_crawler():
             if "index.htm" in detail_route:
                 detail_route = detail_route.replace("index.htm", "").replace("?", "")
 
-            detail_url = base_url + detail_route if detail_route.startswith(
-                "/") else f"{base_url}/html/fund/{detail_route}"
+            detail_url = base_url + detail_route if detail_route.startswith("/") else f"{base_url}/html/fund/{detail_route}"
             if "o=v" not in detail_url and "no=" in detail_url:
                 detail_url = detail_url.replace("?", "?o=v&")
 
-            detail_desc = "신규상장 예정 종목"
-            confirmed_price = ""
+            detail_desc = ""
 
             try:
                 detail_res = session.get(detail_url, headers=headers, verify=False)
@@ -161,25 +158,8 @@ def run_stock_crawler():
 
                 if detail_res.status_code == 200:
                     detail_soup = BeautifulSoup(detail_res.text, "html.parser")
-
-                    # 1. 상단 공모정보 테이블에서 '확정공모가' 파싱
-                    detail_tables = detail_soup.find_all("table")
-                    for d_table in detail_tables:
-                        d_table_text = d_table.get_text()
-                        if "확정공모가" in d_table_text:
-                            d_rows = d_table.find_all("tr")
-                            for d_row in d_rows:
-                                d_cells = d_row.find_all(["th", "td"])
-                                for i, cell in enumerate(d_cells):
-                                    if "확정공모가" in cell.get_text():
-                                        raw_price = d_cells[i + 1].get_text().strip()
-                                        price_digits = re.sub(r'[^\d]', '', raw_price)
-                                        if price_digits:
-                                            confirmed_price = f"{int(price_digits):,}원"
-                                        break
-
-                    # 2. AI 요약 기동
                     page_text = detail_soup.get_text()
+
                     if "1." in page_text or "사업현황" in page_text:
                         cleaned_page_text = clean_text(page_text)
                         start_idx = cleaned_page_text.find("1.")
@@ -190,31 +170,27 @@ def run_stock_crawler():
                             target_chunk = cleaned_page_text[max(0, start_idx - 20):start_idx + 3500]
                             detail_desc = summarize_business_with_ai(stock_name, target_chunk)
             except Exception as sub_e:
-                print(f"⚠️ {stock_name} 상세 데이터 파싱/분석 실패: {str(sub_e)}")
+                print(f"⚠️ {stock_name} AI 데이터 분석 위임 실패: {str(sub_e)}")
 
-            # 🎯 [핵심 변경 및 문자열 병합]
-            # 공모가가 존재하면 세부내용(detail) 앞에 줄바꿈(\n)과 함께 결합해 일체형 문장으로 빌드합니다.
-            if confirmed_price:
-                detail_desc = f"공모가: {confirmed_price}\n{detail_desc}"
-
-            # 3. 주식 일정 캘린더 전용 스펙 페이로드 빌드 (기존 스키마 원본 유지)
+            # 🎯 [수정 교정] payload 딕셔너리 빌드 및 선언 위치를 try-except 밖으로 탈출시켰습니다.
             payload = {
                 "date": formatted_date,
                 "category": "신규상장",
                 "eventName": stock_name,
-                "detail": detail_desc,  # 💡 공모가가 결합된 완성형 텍스트가 저장됩니다.
-                "relatedStocks": "",
-                "url": detail_url
+                "detail": detail_desc,
+                "relatedStocks": "",  # 관련주 비워두기 적용 완료
+                "url": detail_url  # 상세 페이지 링크 주소 적용 완료
             }
 
             events_ref.add(payload)
             success_count += 1
-            print(f"🤖 데이터 가공 및 등록 성공: {formatted_date} | {stock_name}")
+            print(f"🤖 AI 요약 완료 및 등록 성공: {formatted_date} | {stock_name}")
 
         log_payload = {
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "SUCCESS",
-            "task_name": "[IPO캘린더] 38커뮤니케이션 수집",
+            # 💡 [프로젝트명] + 작업명 구조로 명확하게 인지되도록 설정
+            "task_name": "[IPOinfoCrawler] 38커뮤니케이션 IPO일정 수집",
             "added_count": success_count,
             "skipped_count": skip_count,
             "message": f"AI 수집 자동화 정상 종료 - 신규: {success_count}건"
@@ -228,7 +204,6 @@ def run_stock_crawler():
         logs_ref.add({
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "FAILED",
-            "task_name": "[IPO캘린더] 38커뮤니케이션 수집",
             "added_count": 0,
             "skipped_count": 0,
             "message": f"크롤링 실패 에러 로그: {error_msg}"
