@@ -34,7 +34,3 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # 💡 GPT 라이브러리가 인식할 수 있도록 환경변수 주입
       run: |
         python main.py
-
-    - name: 🚀 주식 크롤러 배치 스크립트 실행
-      run: |
-        python main.py
