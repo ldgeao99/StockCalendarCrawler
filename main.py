@@ -160,7 +160,7 @@ def run_stock_crawler():
             detail_desc = "신규상장 예정 종목"
             confirmed_price = ""
             floating_shares = ""
-            floating_amount = ""  # 💡 유통가능액수 문자열 변수 초기화
+            floating_amount = ""
 
             try:
                 detail_res = session.get(detail_url, headers=headers, verify=False)
@@ -236,20 +236,23 @@ def run_stock_crawler():
             except Exception as sub_e:
                 print(f"❌ {stock_name} 상세 데이터 가공 중 에러 발생: {str(sub_e)}")
 
-            # 🎯 [신규 기능 연동] 공모가와 물량이 둘 다 수집되었을 때 곱셈 연산 후 억 단위로 변환
+            # 🎯 [보정 규칙 이식] 소수점 제거 반올림 및 액수 자리수별 원마크(🔵/🔴) 분기 연산
             if confirmed_price and floating_shares:
                 try:
-                    num_price = int(re.sub(r'[^\d]', '', confirmed_price))  # 12500
-                    num_shares = int(re.sub(r'[^\d]', '', floating_shares.split('주')[0]))  # 3541095
+                    num_price = int(re.sub(r'[^\d]', '', confirmed_price))
+                    num_shares = int(re.sub(r'[^\d]', '', floating_shares.split('주')[0]))
 
-                    # 수식 연산 후 원 단위를 억 단위로 가공 (소수점 첫째자리까지 반올림 표현)
-                    calc_amount_billion = round((num_price * num_shares) / 100000000, 1)
+                    # 원 단위 금액 연산 후 1억으로 나누고 반올림하여 소수점이 없는 정수형 억 단위 도출
+                    calc_amount_billion = round((num_price * num_shares) / 100000000)
+
                     if calc_amount_billion > 0:
-                        floating_amount = f"약 {calc_amount_billion:,}억 원"
+                        # 1,000억 단위 이상(4자리 이상)이면 빨간색 원, 그 미만(3자리 이하)이면 파란색 원 지정
+                        color_circle = "🔴" if calc_amount_billion >= 1000 else "🔵"
+                        floating_amount = f"약 {calc_amount_billion:,}억 원 {color_circle}"
                 except Exception as calc_err:
                     print(f"⚠️ {stock_name} 유통가능액수 수식 연산 오류: {str(calc_err)}")
 
-            # 순서 구조 확정 연동 (요청에 따라 순차적 하단 정렬 처리)
+            # 순서 구조 확정 연동
             if confirmed_price:
                 detail_desc = f"{detail_desc}\n공모가: {confirmed_price}"
             if floating_shares:
