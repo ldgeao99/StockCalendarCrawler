@@ -184,22 +184,25 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 🎯 [유통가능물량] 테이블 전수 행 분석 모델로 전면 교정
+                        # 2. 🎯 [유통가능물량] 테이블 타겟 탐색 고도화
                         if "유통가능물량(A-B)" in d_table_text:
                             d_rows = d_table.find_all("tr")
                             for d_row in d_rows:
                                 d_cells = d_row.find_all(["th", "td"])
-                                for cell in d_cells:
-                                    cell_txt = clean_text(cell.get_text())
+                                if not d_cells:
+                                    continue
 
-                                    # 💡 정규식 매칭 범위를 넓혀 빈칸이나 '주' 문자가 생략된 케이스까지 추적
-                                    match = re.search(r'([\d,]+)\s*(?:주)?\s*\(([\d.]+)\s*%\)', cell_txt)
-                                    if match:
-                                        shares_count = match.group(1).strip()
-                                        shares_percent = match.group(2).strip()
+                                # 첫 번째 칸이 '합계'인 행을 직접 격리합니다.
+                                first_cell_txt = clean_text(d_cells[0].get_text())
+                                if first_cell_txt == "합계" and len(d_cells) >= 9:
+                                    # 유통가능물량 주식수(7번째 칸)와 지분율(8번째 칸) 매핑
+                                    raw_shares = clean_text(d_cells[7].get_text()).replace("주", "")
+                                    raw_percent = clean_text(d_cells[8].get_text()).replace("%", "")
 
-                                        # 맨 밑 합계 행이 대개 가장 큰 수치이므로 발견될 때마다 업데이트 누적하여 최종 합계 도출
-                                        floating_shares = f"{shares_count}주({shares_percent}%)"
+                                    # 수치 유효성 검사 후 최종 빌드
+                                    if raw_shares and raw_percent and raw_shares != "-":
+                                        floating_shares = f"{raw_shares}주({raw_percent}%)"
+                                    break
 
                     # 3. OpenAI 핵심 비즈니스 요약 엔진 작동
                     page_text = detail_soup.get_text()
@@ -215,7 +218,7 @@ def run_stock_crawler():
             except Exception as sub_e:
                 print(f"⚠️ {stock_name} 상세 데이터 가공 실패: {str(sub_e)}")
 
-            # 순서 구조 확정 연동
+            # 순서 구조 매핑 후 하단 적재 연동
             if confirmed_price:
                 detail_desc = f"{detail_desc}\n공모가: {confirmed_price}"
             if floating_shares:
