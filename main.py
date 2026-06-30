@@ -52,7 +52,9 @@ def summarize_business_with_ai(stock_name, business_raw_text):
                         "4. 기업명은 포함하지 않는다.\n"
                         "5. '입니다' 대신 명사형으로 끝낸다.\n"
                         "6. 10~20자 내외로 작성한다.\n"
-                        "7. 설명 없이 결과 한 줄만 출력한다.\n"
+                        "7. '인공지능'키워드는 'AI'로 대체해줘\n"
+                        "8. 설명 없이 결과 한 줄만 출력한다.\n"
+
                     )
                 },
                 {"role": "user", "content": f"기업명: {stock_name}\n\n[사업 현황 원문]\n{business_raw_text[:2500]}"}
@@ -62,7 +64,7 @@ def summarize_business_with_ai(stock_name, business_raw_text):
             temperature=0.4  # 일관성 있는 분석 출력을 위해 낮은 값 세팅
         )
         ai_result = response.choices[0].message.content.strip()
-        return f"-{ai_result}"
+        return f"{ai_result}"
 
     except Exception as e:
         print(f"❌ GPT API 통신 실패: {str(e)}")
@@ -152,7 +154,7 @@ def run_stock_crawler():
             if "o=v" not in detail_url and "no=" in detail_url:
                 detail_url = detail_url.replace("?", "?o=v&")
 
-            detail_desc = f"[기업 요약] {stock_name} 신규상장 예정 종목"
+            detail_desc = "신규상장 예정 종목"
 
             try:
                 detail_res = session.get(detail_url, headers=headers, verify=False)
@@ -180,7 +182,7 @@ def run_stock_crawler():
                 "category": "신규상장",
                 "eventName": stock_name,
                 "detail": detail_desc,
-                "relatedStocks": stock_name
+                "relatedStocks": ""
             }
 
             events_ref.add(payload)
