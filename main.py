@@ -184,34 +184,20 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 🎯 [유통가능물량] 테이블 파싱 알고리즘 최종 종결 처리
+                        # 2. 🎯 [유통가능물량] 최강 통용 정규식 필터링 적용
                         if "유통가능물량(A-B)" in d_table_text:
                             d_rows = d_table.find_all("tr")
                             for d_row in d_rows:
-                                d_cells = d_row.find_all(["th", "td"])
-                                if not d_cells:
-                                    continue
+                                # 행 전체의 텍스트를 공백 없이 단 한 줄의 압축 문자열로 만듭니다.
+                                row_combined_text = re.sub(r'\s+', '', d_row.get_text())
 
-                                first_cell_txt = clean_text(d_cells[0].get_text())
-                                if first_cell_txt == "합계":
-                                    # 💡 인덱스 번호를 완전히 배제하고, 합계 행 내부에서 수치적 특성을 가진 칸들을 순차 추출합니다.
-                                    valid_metrics = []
-                                    for cell in d_cells:
-                                        cell_val = clean_text(cell.get_text())
-                                        # 패턴 1: 천 단위 콤마가 포함된 순수 숫자 구조 (예: 4,431,420)
-                                        if re.match(r'^[\d,]+$', cell_val) and cell_val != "100.00":
-                                            valid_metrics.append(cell_val)
-                                        # 패턴 2: 소수점 백분율 구조 (예: 33.19%)
-                                        elif re.match(r'^[\d.]+\s*%$', cell_val) and cell_val != "100.00%":
-                                            valid_metrics.append(cell_val)
-
-                                    # 합계 행의 흐름상 [공모전 계, 공모후 계, 매각제한 계, 유통가능 계] 순으로 적재되므로
-                                    # 리스트의 맨 마지막에 위치하는 두 개가 항상 최종 '유통가능물량'과 '유통지분율'이 됩니다.
-                                    if len(valid_metrics) >= 2:
-                                        target_percent = valid_metrics[-1]  # "33.19%"
-                                        target_shares = valid_metrics[-2]  # "4,431,420"
-
-                                        floating_shares = f"{target_shares}주({target_percent})"
+                                if "합계" in row_combined_text:
+                                    # 💡 문자열 전체에서 "맨 마지막"에 위치한 [숫자,숫자,숫자]와 [숫자.숫자%] 형태를 통째로 정밀 스캔합니다.
+                                    matches = re.findall(r'([\d,]+)([\d.]+\%)', row_combined_text)
+                                    if matches:
+                                        # 맨 마지막 세트 선택
+                                        final_shares, final_percent = matches[-1]
+                                        floating_shares = f"{final_shares}주({final_percent})"
                                     break
 
                     # 3. OpenAI 핵심 비즈니스 요약 엔진 작동
@@ -228,7 +214,6 @@ def run_stock_crawler():
             except Exception as sub_e:
                 print(f"⚠️ {stock_name} 상세 데이터 가공 실패: {str(sub_e)}")
 
-            # 순서 보정 출력 스택 연동
             if confirmed_price:
                 detail_desc = f"{detail_desc}\n공모가: {confirmed_price}"
             if floating_shares:
