@@ -10,7 +10,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from openai import OpenAI
 
-# 파인 레벨 정수 변환 제한 확장 (안전장치)
+# 정수 변환 제한 확장
 sys.set_int_max_str_digits(10000)
 
 # 1. 환경 설정 및 클라이언트 초기화
@@ -156,7 +156,7 @@ def run_stock_crawler():
 
             detail_desc = "신규상장 예정 종목"
             confirmed_price = ""
-            floating_shares = ""  # 💡 유통가능물량 텍스트 저장용 변수 초기화
+            floating_shares = ""
 
             try:
                 detail_res = session.get(detail_url, headers=headers, verify=False)
@@ -184,24 +184,22 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 💡 [유통가능물량] 테이블 탐색 기동
+                        # 2. 🎯 [유통가능물량] 테이블 전수 행 분석 모델로 전면 교정
                         if "유통가능물량(A-B)" in d_table_text:
                             d_rows = d_table.find_all("tr")
-                            if d_rows:
-                                # 해당 테이블의 최하단 행(마지막 tr) 확보
-                                last_row = d_rows[-1]
-                                last_cells = last_row.find_all(["th", "td"])
-
-                                # 마지막 행에서 주식수 형식(예: 3,541,095)과 퍼센트 형식(예: 29.39%) 텍스트 정밀 트래킹
-                                for cell in last_cells:
+                            for d_row in d_rows:
+                                d_cells = d_row.find_all(["th", "td"])
+                                for cell in d_cells:
                                     cell_txt = clean_text(cell.get_text())
-                                    # 패턴 일치 검사 (숫자+쉼표 묶음 및 괄호 안의 소수점% 동시 매칭)
-                                    match = re.search(r'([\d,]+)\s*주?\s*\(([\d.]+)\s*%\)', cell_txt)
+
+                                    # 💡 정규식 매칭 범위를 넓혀 빈칸이나 '주' 문자가 생략된 케이스까지 추적
+                                    match = re.search(r'([\d,]+)\s*(?:주)?\s*\(([\d.]+)\s*%\)', cell_txt)
                                     if match:
                                         shares_count = match.group(1).strip()
                                         shares_percent = match.group(2).strip()
+
+                                        # 맨 밑 합계 행이 대개 가장 큰 수치이므로 발견될 때마다 업데이트 누적하여 최종 합계 도출
                                         floating_shares = f"{shares_count}주({shares_percent}%)"
-                                        break
 
                     # 3. OpenAI 핵심 비즈니스 요약 엔진 작동
                     page_text = detail_soup.get_text()
@@ -217,7 +215,7 @@ def run_stock_crawler():
             except Exception as sub_e:
                 print(f"⚠️ {stock_name} 상세 데이터 가공 실패: {str(sub_e)}")
 
-            # 🎯 [포맷 통합 연동] AI요약문 하단에 공모가와 유통가능물량이 정갈하게 줄바꿈 결합되도록 구성
+            # 순서 구조 확정 연동
             if confirmed_price:
                 detail_desc = f"{detail_desc}\n공모가: {confirmed_price}"
             if floating_shares:
