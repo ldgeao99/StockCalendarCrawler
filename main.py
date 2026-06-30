@@ -174,9 +174,8 @@ def run_stock_crawler():
                     for idx, d_table in enumerate(detail_tables):
                         d_table_text = d_table.get_text()
 
-                        # 1. 확정공모가 추적 디버깅
+                        # 1. 확정공모가 추적 파트
                         if "확정공모가" in d_table_text:
-                            print(f"  👉 [{idx}번 테이블] '확정공모가' 키워드 포착")
                             d_rows = d_table.find_all("tr")
                             for d_row in d_rows:
                                 d_cells = d_row.find_all(["th", "td"])
@@ -184,32 +183,31 @@ def run_stock_crawler():
                                     if "확정공모가" in cell.get_text():
                                         if i + 1 < len(d_cells):
                                             raw_price = d_cells[i + 1].get_text().strip()
-                                            print(f"    - 원본 문자열 발견: '{raw_price}'")
                                             if len(raw_price) < 30:
                                                 price_digits = re.sub(r'[^\d]', '', raw_price)
                                                 if price_digits:
                                                     confirmed_price = f"{int(price_digits):,}원"
-                                                    print(f"    - 🎯 정제 성공: {confirmed_price}")
                                         break
 
-                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직
-                        if "유통가능물량(A-B)" in d_table_text:
-                            print(f"  👉 [{idx}번 테이블] '유통가능물량(A-B)' 키워드 포착")
+                        # 2. 🎯 유통가능물량 파싱 파트 진입 장벽 전면 제거
+                        # 기존 "유통가능물량(A-B)" 대신 훨씬 광범위한 "유통가능물량" 단어만 존재해도 포착하도록 수정
+                        if "유통가능물량" in d_table_text:
+                            print(f"  👉 [{idx}번 테이블] '유통가능물량' 포착 성공 (진입 완료)")
                             d_rows = d_table.find_all("tr")
                             for r_idx, d_row in enumerate(d_rows):
                                 row_combined_text = re.sub(r'\s+', '', d_row.get_text())
 
                                 if "합계" in row_combined_text:
-                                    print(f"    - [{r_idx}번째 행] '합계' 키워드 진입 완료")
-                                    print(f"    - 압축된 행 텍스트 전체: '{row_combined_text}'")
+                                    print(f"    - [{r_idx}번째 행] '합계' 키워드 매칭 진입")
+                                    print(f"    - 압축 원본 행 데이터: '{row_combined_text}'")
 
-                                    # 💡 [보정 패턴] 문자열 가장 우측 끝자락에 붙은 '숫자콤마세트'와 '소수점%' 쌍을 완벽하게 강제 분리 및 역추적합니다.
+                                    # 최우측 종단 데이터를 긁어내기 위한 종결 정규식 매칭
                                     match = re.search(r'([\d,]+)([\d.]+\%)(?:[\s\-]*)$', row_combined_text)
                                     if match:
-                                        final_shares = match.group(1)  # "26,075,572"
-                                        final_percent = match.group(2)  # "48.91%"
+                                        final_shares = match.group(1)
+                                        final_percent = match.group(2)
                                         floating_shares = f"{final_shares}주({final_percent})"
-                                        print(f"    - 🎯 정밀 매핑 성공: {floating_shares}")
+                                        print(f"    - 🎯 매핑 성공 결과: {floating_shares}")
                                     else:
                                         print(f"    - ⚠️ 경고: 정규식 최종 미트 매칭 실패")
                                     break
