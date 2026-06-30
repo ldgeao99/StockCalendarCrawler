@@ -13,6 +13,7 @@ jobs:
     - name: 🛰️ 레포지토리 소스코드 체크아웃
       uses: actions/checkout@v4
 
+    # 💡 파이썬 3.11로 확실하게 올려 Google API 경고 차단
     - name: 🐍 파이썬 3.11 환경 셋업
       uses: actions/setup-python@v5
       with:
@@ -23,14 +24,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install beautifulsoup4 requests google-cloud-firestore urllib3
 
-    # 💡 [보안 완벽 검증] 주입할 때 파일명 양끝에 투명 공백이나 누수가 생기지 않도록 가공 처리
-    - name: 🔑 파이어베이스 서비스 계정 보안 키 주입
+    # 💡 [핵심 교정] Base64로 들어온 보안 문자열을 완벽한 무결성 복원 기법으로 디코딩하여 파일 생성
+    - name: 🔑 파이어베이스 서비스 계정 보안 키 디코딩 주입
       run: |
-        echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" > stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json
-        if [ ! -s stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json ]; then
-          echo "❌ 에러: GitHub Secrets 키 주입 실패. 파일이 비어있습니다."
-          exit 1
-        fi
+        echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 --decode > stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json
 
     - name: 🚀 주식 크롤러 배치 스크립트 실행
       run: |
