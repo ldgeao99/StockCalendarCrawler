@@ -45,6 +45,9 @@ def summarize_business_with_ai(stock_name, business_raw_text):
                     "content": (
                         "너는 주식 분석 전문가야. 제공된 공모 기업의 사업 현황 본문을 읽고, "
                         "사업설명을 증권사 리포트에서 사용하는 사업 분야 한 줄로 요약해줘. "
+                        "조건:\n"
+                        "1. 해당 '기업은' 같은 주어를 생략해줘"
+                        "2. 입니다. 말고 ㅇㅇ 기업으로 문장을 마쳐줘"
                     )
                 },
                 {"role": "user", "content": f"기업명: {stock_name}\n\n[사업 현황 원문]\n{business_raw_text[:2500]}"}
@@ -144,7 +147,7 @@ def run_stock_crawler():
             if "o=v" not in detail_url and "no=" in detail_url:
                 detail_url = detail_url.replace("?", "?o=v&")
 
-            detail_desc = f"[기업 요약] {stock_name} 신규상장 예정 종목"
+            detail_desc = ""
 
             try:
                 detail_res = session.get(detail_url, headers=headers, verify=False)
