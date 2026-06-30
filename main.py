@@ -189,8 +189,7 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 🎯 유통가능물량 파싱 파트 진입 장벽 전면 제거
-                        # 기존 "유통가능물량(A-B)" 대신 훨씬 광범위한 "유통가능물량" 단어만 존재해도 포착하도록 수정
+                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직 (경계선 붕괴 방어 컴파일)
                         if "유통가능물량" in d_table_text:
                             print(f"  👉 [{idx}번 테이블] '유통가능물량' 포착 성공 (진입 완료)")
                             d_rows = d_table.find_all("tr")
@@ -201,13 +200,13 @@ def run_stock_crawler():
                                     print(f"    - [{r_idx}번째 행] '합계' 키워드 매칭 진입")
                                     print(f"    - 압축 원본 행 데이터: '{row_combined_text}'")
 
-                                    # 최우측 종단 데이터를 긁어내기 위한 종결 정규식 매칭
-                                    match = re.search(r'([\d,]+)([\d.]+\%)(?:[\s\-]*)$', row_combined_text)
+                                    # 💡 중간에 유령 문자나 깨진 텍스트가 강제 결합되더라도 수치 앵커링으로 정확히 격리 분할
+                                    match = re.search(r'([\d,]{4,})\D+([\d.]+\%)(?:[\s\-]*)$', row_combined_text)
                                     if match:
-                                        final_shares = match.group(1)
-                                        final_percent = match.group(2)
+                                        final_shares = match.group(1)  # 예: "3,541,095"
+                                        final_percent = match.group(2)  # 예: "29.39%"
                                         floating_shares = f"{final_shares}주({final_percent})"
-                                        print(f"    - 🎯 매핑 성공 결과: {floating_shares}")
+                                        print(f"    - 🎯 정밀 매핑 성공: {floating_shares}")
                                     else:
                                         print(f"    - ⚠️ 경고: 정규식 최종 미트 매칭 실패")
                                     break
