@@ -189,61 +189,45 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직 (경계선 붕괴 방어 컴파일)
+                        # 2. 🎯 [최적화 반영] 유통가능물량 타겟 집중 탐색 엔진
+                        # 테이블 자체에 '유통가능물량' 단어가 있을 때만 단 한 번 진입합니다.
                         if "유통가능물량" in d_table_text:
-                            print(f"  👉 [{idx}번 테이블] '유통가능물량' 포착 성공 (진입 완료)")
+                            print(f"  👉 [{idx}번 테이블] 유통가능물량 전용 표 적중 성공")
                             d_rows = d_table.find_all("tr")
-                            for r_idx, d_row in enumerate(d_rows):
+
+                            # 불필요한 위쪽 행들을 거르고, 주식수와 퍼센트 조합이 존재하는 행들만 역순 탐색하기 위해 뒤집어서 스캔
+                            for d_row in reversed(d_rows):
                                 row_combined_text = re.sub(r'\s+', '', d_row.get_text())
 
-                                # 🎯 [기존 코드 대체] 유통가능물량 주식수 및 지분율 독립 추출 로직
-                                if "합계" in row_combined_text:
-                                    print(f"    - [{r_idx}번째 행] '합계' 키워드 매칭 진입")
-                                    print(f"    - 압축 원본 행 데이터: '{row_combined_text}'")
+                                # 콤마가 포함된 주식수 패턴세트와 소수점 퍼센트 패턴세트 독립 추출
+                                shares_matches = re.findall(r'\b\d{1,3}(?:,\d{3})+\b|[\d,]{4,}', row_combined_text)
+                                percent_matches = re.findall(r'[\d.]+\%', row_combined_text)
 
-                                    # 1. 콤마가 포함된 순수 주식수 패턴 세트 추출 (가장 마지막에 위치한 주식수)
-                                    shares_matches = re.findall(r'\b\d{1,3}(?:,\d{3})+\b|[\d,]{4,}', row_combined_text)
-                                    # 2. 소수점이 포함된 퍼센트 패턴 세트 추출 (가장 마지막에 위치한 지분율)
-                                    percent_matches = re.findall(r'[\d.]+\%', row_combined_text)
+                                if shares_matches and percent_matches:
+                                    raw_shares = shares_matches[-1]
+                                    final_percent = percent_matches[-1]
 
-                                    if shares_matches and percent_matches:
-                                        raw_shares = shares_matches[-1]  # 맨 우측 주식수 덩어리 확보
-                                        final_percent = percent_matches[-1]  # 맨 우측 지분율 덩어리 확보
+                                    # 밀착 현상으로 인한 경계선 예외 보정 구문 실행
+                                    if final_percent.startswith('.'):
+                                        actual_percent_prefix = re.search(r'(\d+)' + re.escape(final_percent),
+                                                                          row_combined_text)
+                                        if actual_percent_prefix:
+                                            final_percent = f"{actual_percent_prefix.group(1)}{final_percent}"
 
-                                        # 만약 주식수 끝에 지분율의 앞자리가 강제 정착된 경우 (예: "3,541,09529"에서 뒤의 "29" 소거)
-                                        if final_percent.startswith('.'):
-                                            # 퍼센트가 .39% 형태로 쪼개진 경우, 주식수 뒤에서 진짜 지분율 앞자리(29)를 찾아 복원
-                                            # 원래 지분율이 29.39%였다면 전체 스트림 구조에서 소수점 앞 정수부를 역매칭
-                                            actual_percent_prefix = re.search(r'(\d+)' + re.escape(final_percent),
-                                                                              row_combined_text)
-                                            if actual_percent_prefix:
-                                                final_percent = f"{actual_percent_prefix.group(1)}{final_percent}"
+                                    final_shares = re.sub(r'\d+$', '', raw_shares) if raw_shares.endswith(
+                                        final_percent.split('.')[0]) else raw_shares
 
-                                        # 주식수 우측 끝에 붙은 지분율 정수부 노이즈 제거 (순수 콤마 형태만 보존)
-                                        final_shares = re.sub(r'\d+$', '', raw_shares) if raw_shares.endswith(
-                                            final_percent.split('.')[0]) else raw_shares
+                                    match_clean = re.search(r'([\d,]+?)(?=\d{2}\.\d+%)|([\d,]+)', raw_shares)
+                                    if match_clean:
+                                        final_shares = match_clean.group(1) if match_clean.group(
+                                            1) else match_clean.group(2)
 
-                                        # 최종 예외 방어 조건 검사 후 할당
-                                        if not final_shares.endswith(','):
-                                            # 만약 위 노이즈 제거로 과하게 지워졌을 경우를 대비한 2차 안전 장치
-                                            # 원래 주식수 형태인 3,541,095 규격(콤마 기준 포맷팅)을 강제 유지합니다.
-                                            match_clean = re.search(r'([\d,]+?)(?=\d{2}\.\d+%)|([\d,]+)', raw_shares)
-                                            if match_clean:
-                                                final_shares = match_clean.group(1) if match_clean.group(
-                                                    1) else match_clean.group(2)
-
-                                        # 💡 최종 검증 보정 데이터 조립
-                                        # 만약 슬라이싱 과정에서 오차가 생기더라도 원본 글자 수가 유지되도록 확정 앵커 매칭
+                                    # 100% 규격 필터 해제 및 최종 조립 완료
+                                    if final_percent != "100.00%":
                                         floating_shares = f"{final_shares.strip(',')}주({final_percent})"
-
-                                        # 만약 연산 결과가 여전히 틀어질 가능성을 차단하기 위한 최종 하드 필터링
-                                        if "3,541,095" in row_combined_text and "29.39%" in row_combined_text:
-                                            floating_shares = "3,541,095주(29.39%)"
-
-                                        print(f"    - 🎯 경계선 붕괴 방어 성공 매핑 결과: {floating_shares}")
-                                    else:
-                                        print(f"    - ⚠️ 경고: 정규식 최종 미트 매칭 실패")
-                                    break
+                                        print(f"    - 🎯 고속 매핑 완료: {floating_shares}")
+                                        break  # 원하는 최종 하단 합계 수치를 찾았으므로 즉시 루프 탈출 (속도 극대화)
+                            break  # 전용 테이블 처리가 끝났으므로 다른 테이블 검사 스킵
 
                     # 3. OpenAI 요약 파트
                     page_text = detail_soup.get_text()
