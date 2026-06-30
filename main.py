@@ -190,9 +190,15 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                        # 2. 유통가능물량 파싱 핵심 종결 로직
+                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직 (부모-자식 고스트 테이블 완벽 격리)
                         if "유통가능물량" in d_table_text:
-                            print(f"  👉 [{idx}번 테이블] 유통가능물량 전용 표 적중 성공")
+                            # 💡 [2차 안전장치] 거대 레이아웃용 부모 테이블을 거르고, 진짜 유통물량 헤더가 있는 표인지 직접 검증합니다.
+                            # 첫 3개 행 중에 '유통가능물량'이나 '매각제한' 헤더가 명시되어 있는지 확인
+                            first_rows_text = "".join([re.sub(r'\s+', '', r.get_text()) for r in d_table.find_all("tr")[:3]])
+                            if "유통가능물량" not in first_rows_text and "매각제한" not in first_rows_text:
+                                continue  # 레이아웃용 껍데기 테이블이면 과감히 패스
+
+                            print(f"  👉 [{idx}번 테이블] 검증된 유통가능물량 진짜 표 적중 성공")
                             d_rows = d_table.find_all("tr")
 
                             for d_row in reversed(d_rows):
@@ -203,7 +209,8 @@ def run_stock_crawler():
                                 cells_list = [re.sub(r'\s+', '', cell.get_text()) for cell in d_cells]
                                 row_split_text = "|".join(cells_list)
 
-                                if "합계" in row_split_text:
+                                # 💡 '총합계' 혹은 순수 '합계' 글자로 명확히 떨어지는 행만 타겟팅 (재무제표의 '~등합계' 노이즈 차단)
+                                if "합계" in cells_list or any(item == "합계" or item == "총합계" for item in cells_list):
                                     print(f"    - '합계' 결산 행 안전 분할 포착: '{row_split_text}'")
 
                                     valid_items = []
@@ -211,15 +218,18 @@ def run_stock_crawler():
                                         if re.match(r'^[\d,]+$', item) or re.match(r'^[\d.]+\%$', item):
                                             valid_items.append(item)
 
+                                    print(f"    - 구분 정제된 유효 스펙 데이터 배열: {valid_items}")
+
                                     if len(valid_items) >= 2:
                                         final_percent = valid_items[-1]
                                         final_shares = valid_items[-2]
 
                                         if final_percent != "100.00%":
                                             floating_shares = f"{final_shares}주({final_percent})"
-                                            print(f"    - 🎯 경계선 버그 완전 해결 성공: {floating_shares}")
+                                            print(f"    - 🎯 고스트 테이블 버그 완전 해결 성공: {floating_shares}")
                                             break
-                            break
+                            if floating_shares:
+                                break # 진짜 표에서 데이터를 찾았으므로 다른 테이블 루프 탈출
 
                     # 3. OpenAI 요약 파트
                     page_text = detail_soup.get_text()
