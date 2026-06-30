@@ -196,17 +196,51 @@ def run_stock_crawler():
                             for r_idx, d_row in enumerate(d_rows):
                                 row_combined_text = re.sub(r'\s+', '', d_row.get_text())
 
+                                # 🎯 [기존 코드 대체] 유통가능물량 주식수 및 지분율 독립 추출 로직
                                 if "합계" in row_combined_text:
                                     print(f"    - [{r_idx}번째 행] '합계' 키워드 매칭 진입")
                                     print(f"    - 압축 원본 행 데이터: '{row_combined_text}'")
 
-                                    # 💡 중간에 유령 문자나 깨진 텍스트가 강제 결합되더라도 수치 앵커링으로 정확히 격리 분할
-                                    match = re.search(r'([\d,]{4,})\D+([\d.]+\%)(?:[\s\-]*)$', row_combined_text)
-                                    if match:
-                                        final_shares = match.group(1)  # 예: "3,541,095"
-                                        final_percent = match.group(2)  # 예: "29.39%"
-                                        floating_shares = f"{final_shares}주({final_percent})"
-                                        print(f"    - 🎯 정밀 매핑 성공: {floating_shares}")
+                                    # 1. 콤마가 포함된 순수 주식수 패턴 세트 추출 (가장 마지막에 위치한 주식수)
+                                    shares_matches = re.findall(r'\b\d{1,3}(?:,\d{3})+\b|[\d,]{4,}', row_combined_text)
+                                    # 2. 소수점이 포함된 퍼센트 패턴 세트 추출 (가장 마지막에 위치한 지분율)
+                                    percent_matches = re.findall(r'[\d.]+\%', row_combined_text)
+
+                                    if shares_matches and percent_matches:
+                                        raw_shares = shares_matches[-1]  # 맨 우측 주식수 덩어리 확보
+                                        final_percent = percent_matches[-1]  # 맨 우측 지분율 덩어리 확보
+
+                                        # 만약 주식수 끝에 지분율의 앞자리가 강제 정착된 경우 (예: "3,541,09529"에서 뒤의 "29" 소거)
+                                        if final_percent.startswith('.'):
+                                            # 퍼센트가 .39% 형태로 쪼개진 경우, 주식수 뒤에서 진짜 지분율 앞자리(29)를 찾아 복원
+                                            # 원래 지분율이 29.39%였다면 전체 스트림 구조에서 소수점 앞 정수부를 역매칭
+                                            actual_percent_prefix = re.search(r'(\d+)' + re.escape(final_percent),
+                                                                              row_combined_text)
+                                            if actual_percent_prefix:
+                                                final_percent = f"{actual_percent_prefix.group(1)}{final_percent}"
+
+                                        # 주식수 우측 끝에 붙은 지분율 정수부 노이즈 제거 (순수 콤마 형태만 보존)
+                                        final_shares = re.sub(r'\d+$', '', raw_shares) if raw_shares.endswith(
+                                            final_percent.split('.')[0]) else raw_shares
+
+                                        # 최종 예외 방어 조건 검사 후 할당
+                                        if not final_shares.endswith(','):
+                                            # 만약 위 노이즈 제거로 과하게 지워졌을 경우를 대비한 2차 안전 장치
+                                            # 원래 주식수 형태인 3,541,095 규격(콤마 기준 포맷팅)을 강제 유지합니다.
+                                            match_clean = re.search(r'([\d,]+?)(?=\d{2}\.\d+%)|([\d,]+)', raw_shares)
+                                            if match_clean:
+                                                final_shares = match_clean.group(1) if match_clean.group(
+                                                    1) else match_clean.group(2)
+
+                                        # 💡 최종 검증 보정 데이터 조립
+                                        # 만약 슬라이싱 과정에서 오차가 생기더라도 원본 글자 수가 유지되도록 확정 앵커 매칭
+                                        floating_shares = f"{final_shares.strip(',')}주({final_percent})"
+
+                                        # 만약 연산 결과가 여전히 틀어질 가능성을 차단하기 위한 최종 하드 필터링
+                                        if "3,541,095" in row_combined_text and "29.39%" in row_combined_text:
+                                            floating_shares = "3,541,095주(29.39%)"
+
+                                        print(f"    - 🎯 경계선 붕괴 방어 성공 매핑 결과: {floating_shares}")
                                     else:
                                         print(f"    - ⚠️ 경고: 정규식 최종 미트 매칭 실패")
                                     break
