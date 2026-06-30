@@ -120,7 +120,8 @@ def run_stock_crawler():
             stock_name = clean_text(stock_a.text)
             raw_date = clean_text(cols[1].text).replace(".", "/")
 
-            if (!stock_name or not raw_date or raw_date in["-", "미정", "상장일"] or "종목명" in stock_name):
+            # 💡 [교정 완료] ! 대신 파이썬 문법 규칙인 not으로 수정되었습니다.
+            if not stock_name or not raw_date or raw_date in ["-", "미정", "상장일"] or "종목명" in stock_name:
                 continue
 
             stock_name = stock_name.split("(")[0].strip()
@@ -186,7 +187,7 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                    # 2. 🎯 유통가능물량 진짜 표 저격 엔진 가동
+                    # 2. 유통가능물량 진짜 표 저격 엔진 가동
                     for idx, d_table in enumerate(detail_tables):
                         table_rows = d_table.find_all("tr")
                         if len(table_rows) < 3:
@@ -225,9 +226,8 @@ def run_stock_crawler():
                                         if final_percent != "100.00%":
                                             floating_shares = f"{final_shares}주({final_percent})"
                                             print(f"    - 🎯 완벽 수집 성공 결과: {floating_shares}")
-                                            break  # 내부 행 스캔 종료
+                                            break
 
-                            # 💡 [조기 종료 가드 추가] 진짜 유통 주식수를 찾았다면, 바깥쪽 테이블 탐색 루프도 즉시 탈출합니다.
                             if floating_shares:
                                 break
 
