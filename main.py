@@ -78,7 +78,7 @@ def run_stock_crawler():
     base_url = "https://www.38.co.kr"
     list_url = f"{base_url}/html/fund/index.htm?o=nw"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, height=64) Chrome/120.0.0.0 Safari/537.36"
     }
 
     class SSLAdapter(requests.adapters.HTTPAdapter):
@@ -120,7 +120,7 @@ def run_stock_crawler():
             stock_name = clean_text(stock_a.text)
             raw_date = clean_text(cols[1].text).replace(".", "/")
 
-            if not stock_name or not raw_date or raw_date in ["-", "미정", "상장일"] or "종목명" in stock_name:
+            if (!stock_name or not raw_date or raw_date in["-", "미정", "상장일"] or "종목명" in stock_name):
                 continue
 
             stock_name = stock_name.split("(")[0].strip()
@@ -186,13 +186,12 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                    # 2. 🎯 [최종 보완] 3종 세트 기반 유통가능물량 진짜 표 저격 엔진 가동
+                    # 2. 🎯 유통가능물량 진짜 표 저격 엔진 가동
                     for idx, d_table in enumerate(detail_tables):
                         table_rows = d_table.find_all("tr")
                         if len(table_rows) < 3:
                             continue
 
-                        # 💡 상단 헤더 영역(0~3번 행)을 묶어 진짜 유통물량 식별 기호 3종이 존재하는지 검증
                         header_chunk_text = "".join([re.sub(r'\s+', '', r.get_text()) for r in table_rows[:4]])
 
                         if "유통가능물량" in header_chunk_text and "주식수" in header_chunk_text and "지분율" in header_chunk_text:
@@ -208,7 +207,6 @@ def run_stock_crawler():
                                 cells_list = [re.sub(r'\s+', '', cell.get_text()) for cell in d_cells]
                                 row_split_text = "|".join(cells_list)
 
-                                # '총계' 혹은 '합계' 결산 행 추적
                                 if "합계" in cells_list or "총계" in cells_list or any(
                                         item in ["합계", "총계", "총합계"] for item in cells_list):
                                     print(f"    - '합계' 결산 행 안전 분할 포착: '{row_split_text}'")
@@ -227,7 +225,9 @@ def run_stock_crawler():
                                         if final_percent != "100.00%":
                                             floating_shares = f"{final_shares}주({final_percent})"
                                             print(f"    - 🎯 완벽 수집 성공 결과: {floating_shares}")
-                                            break
+                                            break  # 내부 행 스캔 종료
+
+                            # 💡 [조기 종료 가드 추가] 진짜 유통 주식수를 찾았다면, 바깥쪽 테이블 탐색 루프도 즉시 탈출합니다.
                             if floating_shares:
                                 break
 
