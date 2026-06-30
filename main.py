@@ -154,9 +154,6 @@ def run_stock_crawler():
             if "o=v" not in detail_url and "no=" in detail_url:
                 detail_url = detail_url.replace("?", "?o=v&")
 
-            # -------------------------------------------------------------
-            # 여기서부터 개별 종목 상세 디버깅 파트 시작
-            # -------------------------------------------------------------
             print(f"\n🔍 [디버깅 대상 종목 시작] -------------------------------")
             print(f"🏢 종목명: {stock_name} | 🔗 URL: {detail_url}")
 
@@ -195,7 +192,7 @@ def run_stock_crawler():
                                                     print(f"    - 🎯 정제 성공: {confirmed_price}")
                                         break
 
-                        # 2. 유통가능물량 추적 디버깅
+                        # 2. 🎯 유통가능물량 파싱 핵심 종결 로직
                         if "유통가능물량(A-B)" in d_table_text:
                             print(f"  👉 [{idx}번 테이블] '유통가능물량(A-B)' 키워드 포착")
                             d_rows = d_table.find_all("tr")
@@ -206,15 +203,15 @@ def run_stock_crawler():
                                     print(f"    - [{r_idx}번째 행] '합계' 키워드 진입 완료")
                                     print(f"    - 압축된 행 텍스트 전체: '{row_combined_text}'")
 
-                                    matches = re.findall(r'([\d,]+)([\d.]+\%)', row_combined_text)
-                                    print(f"    - 정규식 정밀 스캔 매칭 목록: {matches}")
-
-                                    if matches:
-                                        final_shares, final_percent = matches[-1]
+                                    # 💡 [보정 패턴] 문자열 가장 우측 끝자락에 붙은 '숫자콤마세트'와 '소수점%' 쌍을 완벽하게 강제 분리 및 역추적합니다.
+                                    match = re.search(r'([\d,]+)([\d.]+\%)(?:[\s\-]*)$', row_combined_text)
+                                    if match:
+                                        final_shares = match.group(1)  # "26,075,572"
+                                        final_percent = match.group(2)  # "48.91%"
                                         floating_shares = f"{final_shares}주({final_percent})"
-                                        print(f"    - 🎯 최종 매핑 결과 선택: {floating_shares}")
+                                        print(f"    - 🎯 정밀 매핑 성공: {floating_shares}")
                                     else:
-                                        print(f"    - ⚠️ 경고: '합계' 행은 찾았으나 정규식(숫자+%) 조건에 걸러진 데이터가 없음")
+                                        print(f"    - ⚠️ 경고: 정규식 최종 미트 매칭 실패")
                                     break
 
                     # 3. OpenAI 요약 파트
