@@ -2,7 +2,8 @@ name: 🤖 38커뮤니케이션 IPO 일정 자동 수집 파이프라인
 
 on:
   schedule:
-    - cron: '30 23 * * *'
+    # 💡 한국 시간(KST) 매일 오전 06시 00분 실행 설정 (UTC 21:00)
+    - cron: '0 21 * * *'
   workflow_dispatch:
 
 jobs:
