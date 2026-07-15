@@ -1,4 +1,4 @@
-name: US CPI News Release Calendar Crawler (Monthly)
+name: crawl_cpi_calendar (Monthly)
 
 on:
   schedule:
