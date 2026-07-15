@@ -14,12 +14,25 @@ from openai import OpenAI
 sys.set_int_max_str_digits(10000)
 
 # 1. 환경 설정 및 클라이언트 초기화
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json"
-db = firestore.Client()
-events_ref = db.collection("events")
-logs_ref = db.collection("crawler_logs")
+FIREBASE_KEY_PATH = "stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json"
 
-ai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+if os.path.exists(FIREBASE_KEY_PATH):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = FIREBASE_KEY_PATH
+    db = firestore.Client(project="stockcalender-13042")
+else:
+    print(f"⚠️ [경고] 파이어베이스 인증 파일({FIREBASE_KEY_PATH})을 찾을 수 없습니다.")
+    print("로컬 드라이런 모드로 계속 진행합니다.")
+    db = None
+
+openai_key = os.environ.get("OPENAI_API_KEY")
+if openai_key:
+    ai_client = OpenAI(api_key=openai_key)
+else:
+    ai_client = None
+    print("⚠️ [경고] OPENAI_API_KEY 환경 변수가 없습니다. GPT 요약 기능은 생략됩니다.")
+
+events_ref = db.collection("events") if db else None
+logs_ref = db.collection("crawler_logs") if db else None
 
 
 def clean_text(text):
@@ -31,12 +44,10 @@ def clean_text(text):
 
 
 def summarize_business_with_ai(stock_name, business_raw_text):
-    """
-    [🤖 AI 요약 엔진] GPT에게 원문 텍스트를 전달하여
-    핵심 비즈니스 모델만 10~20자 내외 명사형으로 정밀 요약해 옵니다.
-    """
+    if not ai_client:
+        return "신규상장 예정 종목"
     if not business_raw_text or "사업현황" not in business_raw_text:
-        return f"참조 가능한 정보 없음"
+        return "참조 가능한 정보 없음"
 
     try:
         response = ai_client.chat.completions.create(
@@ -47,15 +58,10 @@ def summarize_business_with_ai(stock_name, business_raw_text):
                     "content": (
                         "너는 주식 증권사 리서치 애널리스트야. 제공된 공모 기업의 사업 현황을 읽고, "
                         "증권사 리포트에서 사용하는 사업 분야를 한 줄로 요약해줘.\n"
-                        "조건:\n"
-                        "1. 핵심 기술과 적용 산업만 포함한다.\n"
-                        "2. 고객사, 경쟁력, 수익구조, 성장전략, 시장 전망은 제외한다.\n"
-                        "3. '당사는', '동사는' 등 주어는 사용하지 않는다.\n"
-                        "4. 기업명은 포함하지 않는다.\n"
-                        "5. '입니다' 대신 명사형으로 끝낸다.\n"
-                        "6. 10~20자 내외로 작성한다.\n"
-                        "7. '인공지능'키워드는 'AI'로 대체해줘\n"
-                        "8. 설명 없이 결과 한 줄만 출력한다."
+                        "조건:\n1. 핵심 기술과 적용 산업만 포함한다.\n2. 고객사는 제외한다.\n"
+                        "3. 주어는 사용하지 않는다.\n4. 기업명은 포함하지 않는다.\n"
+                        "5. 명사형으로 끝낸다.\n6. 10~20자 내외로 작성한다.\n"
+                        "7. '인공지능'키워드는 'AI'로 대체해줘\n8. 설명 없이 결과 한 줄만 출력한다."
                     )
                 },
                 {"role": "user", "content": f"기업명: {stock_name}\n\n[사업 현황 원문]\n{business_raw_text[:2500]}"}
@@ -66,36 +72,44 @@ def summarize_business_with_ai(stock_name, business_raw_text):
         ai_result = response.choices[0].message.content.strip()
         ai_result = re.sub(r'^[\s\-\•\.\,\_]+', '', ai_result)
         return f"{ai_result}"
-
     except Exception as e:
         print(f"❌ GPT API 통신 실패: {str(e)}")
-        return f"신규상장 예정 종목"
+        return "신규상장 예정 종목"
+
+
+class SSL38Adapter(requests.adapters.HTTPAdapter):
+    def init_poolmanager(self, *args, **kwargs):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.set_ciphers('DEFAULT:@SECLEVEL=0')
+        kwargs['ssl_context'] = context
+        return super(SSL38Adapter, self).init_poolmanager(*args, **kwargs)
 
 
 def run_stock_crawler():
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🚀 GPT AI 엔진 장착 크롤러 가동...")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🚀 GPT AI 엔진 장착 크롤러 가동 (38커뮤니케이션 전용 SSL 튜닝 패치 적용)...")
 
     base_url = "https://www.38.co.kr"
     list_url = f"{base_url}/html/fund/index.htm?o=nw"
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, height=64) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
     }
 
-    class SSLAdapter(requests.adapters.HTTPAdapter):
-        def init_poolmanager(self, *args, **kwargs):
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            context.set_ciphers('DEFAULT:@SECLEVEL=0')
-            kwargs['ssl_context'] = context
-            return super(SSLAdapter, self).init_poolmanager(*args, **kwargs)
+    # 💡 [디버깅 모니터링 엔진] 수집 결과 기록용 동적 버킷 정의
+    processed_list = []
+    skipped_list = []
 
     try:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        session = requests.Session()
-        session.mount("https://", SSLAdapter())
 
-        response = session.get(list_url, headers=headers, verify=False)
+        session = requests.Session()
+        session.mount("https://", SSL38Adapter())
+
+        response = session.get(list_url, headers=headers, verify=False, timeout=15)
         response.encoding = 'euc-kr'
 
         soup = BeautifulSoup(response.text, "html.parser")
@@ -135,15 +149,23 @@ def run_stock_crawler():
             except ValueError:
                 continue
 
-            duplicate_query = events_ref.where(
-                filter=FieldFilter("date", "==", formatted_date)
-            ).where(
-                filter=FieldFilter("eventName", "==", stock_name)
-            ).get()
+            # 중복 검증 단계
+            if events_ref:
+                duplicate_query = events_ref.where(
+                    filter=FieldFilter("date", "==", formatted_date)
+                ).where(
+                    filter=FieldFilter("eventName", "==", stock_name)
+                ).get()
 
-            if len(duplicate_query) > 0:
-                skip_count += 1
-                continue
+                if len(duplicate_query) > 0:
+                    skip_count += 1
+                    # 💡 스킵된 종목 기록 저장
+                    skipped_list.append({
+                        "date": formatted_date,
+                        "name": stock_name,
+                        "reason": "DB 내 중복된 일정 발견 (스킵 처리)"
+                    })
+                    continue
 
             detail_route = stock_a.get("href")
             if "index.htm" in detail_route:
@@ -163,13 +185,13 @@ def run_stock_crawler():
             floating_amount = ""
 
             try:
-                detail_res = session.get(detail_url, headers=headers, verify=False)
+                detail_res = session.get(detail_url, headers=headers, verify=False, timeout=15)
                 detail_res.encoding = 'euc-kr'
 
                 if detail_res.status_code == 200:
                     detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
-                    # 1. 확정공모가 완전 추적 루프
+                    # 1. 확정공모가 추적
                     detail_tables = detail_soup.find_all("table")
                     for d_table in detail_tables:
                         if "확정공모가" in d_table.get_text():
@@ -186,7 +208,7 @@ def run_stock_crawler():
                                                     confirmed_price = f"{int(price_digits):,}원"
                                         break
 
-                    # 2. 🎯 유통가능물량 진짜 표 저격 엔진 가동
+                    # 2. 유통가능물량 진짜 표 저격 엔진
                     for idx, d_table in enumerate(detail_tables):
                         table_rows = d_table.find_all("tr")
                         if len(table_rows) < 3:
@@ -211,7 +233,6 @@ def run_stock_crawler():
                                     item in ["합계", "총계", "총합계"] for item in cells_list)
                                 has_percentage = any("%" in item for item in cells_list)
 
-                                # 💡 [재무제표 노이즈 원천 배제 가드 레이어 이식]
                                 is_financial_noise = any(
                                     k in row_split_text for k in ["과목", "자본", "매출", "이익", "손실", "자산총계", "부채총계", "거래등"])
 
@@ -264,7 +285,7 @@ def run_stock_crawler():
                 except Exception as calc_err:
                     print(f"⚠️ {stock_name} 유통가능액수 수식 연산 오류: {str(calc_err)}")
 
-            # 순서 구조 확정 연동
+            # 구조 결합
             if confirmed_price:
                 detail_desc = f"{detail_desc}\n공모가: {confirmed_price}"
             if floating_shares:
@@ -272,41 +293,78 @@ def run_stock_crawler():
             if floating_amount:
                 detail_desc = f"{detail_desc}\n유통가능액수: {floating_amount}"
 
-            payload = {
-                "date": formatted_date,
-                "category": "신규상장",
-                "eventName": stock_name,
-                "detail": detail_desc,
-                "relatedStocks": "",
-                "url": detail_url
-            }
+            if events_ref:
+                payload = {
+                    "date": formatted_date,
+                    "category": "신규상장",
+                    "eventName": stock_name,
+                    "detail": detail_desc,
+                    "relatedStocks": "",
+                    "url": detail_url
+                }
+                events_ref.add(payload)
+                success_count += 1
+                print(f"✅ 데이터 최종 적재 성공 완료")
+            else:
+                success_count += 1
+                print(f"📝 [드라이런 모드 로그 출력] 날짜: {formatted_date} | 종목: {stock_name}")
 
-            events_ref.add(payload)
-            success_count += 1
-            print(f"✅ 데이터 최종 적재 성공 완료")
+            # 💡 정상 처리 완료 리스트 기록 추가
+            processed_list.append({
+                "date": formatted_date,
+                "name": stock_name,
+                "detail": detail_desc.replace("\n", " | ")
+            })
             print(f"🔍 [디버깅 대상 종목 종료] -------------------------------\n")
 
-        log_payload = {
-            "timestamp": firestore.SERVER_TIMESTAMP,
-            "status": "SUCCESS",
-            "task_name": "[crawl_ipo_schedule] 38커뮤니케이션 IPO일정 수집",
-            "added_count": success_count,
-            "skipped_count": skip_count,
-            "message": f"AI 수집 자동화 정상 종료 - 신규: {success_count}건"
-        }
-        logs_ref.add(log_payload)
-        print(f"🏁 AI 파이프라인 프로세스 종료. 추가: {success_count}건 / 스킵: {skip_count}건")
+        # 💡 [핵심 교정부] 최종 요약 현황 테이블 콘솔 전수 출력
+        print("\n" + "=" * 80)
+        print("📊 [최종 실행 보고서] 상장 일정 파이프라인 정밀 분석 결과")
+        print("=" * 80)
+
+        print(f"\n✅ 1. 파이어베이스 신규 적재 목록 (총 {len(processed_list)}건)")
+        print("-" * 80)
+        if not processed_list:
+            print("  [알림] 새로 추가된 일정이 존재하지 않습니다.")
+        else:
+            for idx, item in enumerate(processed_list, start=1):
+                print(f"  [{idx:02d}] 상장일: {item['date']} | 종목명: {item['name']}")
+                print(f"       ↳ 데이터 요약: {item['detail']}")
+        print("-" * 80)
+
+        print(f"\n⏭️  2. 데이터베이스 중복 스킵 목록 (총 {len(skipped_list)}건)")
+        print("-" * 80)
+        if not skipped_list:
+            print("  [알림] 중복으로 인한 스킵 건수가 없습니다. 깨끗한 원천 데이터 상태입니다.")
+        else:
+            for idx, item in enumerate(skipped_list, start=1):
+                print(f"  [{idx:02d}] 등록일: {item['date']} | 종목명: {item['name']:<12} ➡️ 사유: {item['reason']}")
+        print("-" * 80)
+
+        if logs_ref:
+            log_payload = {
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "status": "SUCCESS",
+                "task_name": "[crawl_ipo_schedule] 38커뮤니케이션 IPO일정 수집",
+                "added_count": success_count,
+                "skipped_count": skip_count,
+                "message": f"AI 수집 자동화 정상 종료 - 신규: {success_count}건, 중복 스킵: {skip_count}건"
+            }
+            logs_ref.add(log_payload)
+        print(f"\n🏁 AI 파이프라인 프로세스 종료. 추가: {success_count}건 / 스킵: {skip_count}건")
+        print("=" * 80 + "\n")
 
     except Exception as e:
         error_msg = str(e)
         print(f"❌ 에러 발생: {error_msg}")
-        logs_ref.add({
-            "timestamp": firestore.SERVER_TIMESTAMP,
-            "status": "FAILED",
-            "added_count": 0,
-            "skipped_count": 0,
-            "message": f"크롤링 실패 에러 로그: {error_msg}"
-        })
+        if logs_ref:
+            logs_ref.add({
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "status": "FAILED",
+                "added_count": 0,
+                "skipped_count": 0,
+                "message": f"크롤링 실패 에러 로그: {error_msg}"
+            })
 
 
 if __name__ == "__main__":
