@@ -1,4 +1,4 @@
-name: 🤖 38커뮤니케이션 IPO 일정 자동 수집 파이프라인
+name: 🤖 [종합 수집] IPO 일정 & 글로벌 증시 휴장 자동화 파이프라인
 
 on:
   schedule:
@@ -20,18 +20,23 @@ jobs:
       with:
         python-version: '3.11'
 
+    # 💡 Cloudflare 우회를 위해 필수적인 cloudscraper 종속성을 빌드 환경에 함께 주입합니다.
     - name: 📦 필수 파이썬 라이브러리 종속성 설치
       run: |
         python -m pip install --upgrade pip
-        pip install beautifulsoup4 requests google-cloud-firestore urllib3 openai
+        pip install beautifulsoup4 requests google-cloud-firestore urllib3 openai cloudscraper
 
-    # 💡 [핵심 교정] Base64로 들어온 보안 문자열을 완벽한 무결성 복원 기법으로 디코딩하여 파일 생성
+    # 💡 Base64로 들어온 보안 문자열을 완벽한 무결성 복원 기법으로 디코딩하여 파일 생성
     - name: 🔑 파이어베이스 서비스 계정 보안 키 디코딩 주입
       run: |
         echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 --decode > stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json
 
-    - name: 🚀 주식 크롤러 배치 스크립트 실행
+    - name: 🚀 주식 크롤러 배치 스크립트 실행 (38커뮤니케이션 IPO 일정)
       env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # 💡 GPT 라이브러리가 인식할 수 있도록 환경변수 주입
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }} # GPT 라이브러리가 인식할 수 있도록 환경변수 주입
       run: |
-        python main.py
+        python crawl_ipo_schedule.py
+
+    - name: 🚀 글로벌 증시 휴장 크롤러 배치 스크립트 실행 (인베스팅닷컴 글로벌 휴장일)
+      run: |
+        python crawl_investing_holiday_calendar.py
