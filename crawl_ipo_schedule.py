@@ -289,7 +289,7 @@ def run_stock_crawler():
         log_payload = {
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "SUCCESS",
-            "task_name": "[IPOinfoCrawler] 38커뮤니케이션 IPO일정 수집",
+            "task_name": "[crawl_ipo_schedule] 38커뮤니케이션 IPO일정 수집",
             "added_count": success_count,
             "skipped_count": skip_count,
             "message": f"AI 수집 자동화 정상 종료 - 신규: {success_count}건"

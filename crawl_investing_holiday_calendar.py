@@ -291,7 +291,7 @@ def run_holiday_crawler():
         log_payload = {
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "SUCCESS",
-            "task_name": "[MarketHolidayCrawler] 글로벌 증시 휴장 수집",
+            "task_name": "[crawl_investing_holiday_calendar] 글로벌 증시 휴장 수집",
             "added_count": success_count,
             "skipped_count": skip_count,
             "message": f"디버깅 실행 종료 - 처리: {success_count}건, 보존스킵: {skip_count}건"
