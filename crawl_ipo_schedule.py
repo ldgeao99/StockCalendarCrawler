@@ -361,6 +361,7 @@ def run_stock_crawler():
             logs_ref.add({
                 "timestamp": firestore.SERVER_TIMESTAMP,
                 "status": "FAILED",
+                "task_name": "[crawl_ipo_schedule] 38커뮤니케이션 IPO일정 수집",
                 "added_count": 0,
                 "skipped_count": 0,
                 "message": f"크롤링 실패 에러 로그: {error_msg}"

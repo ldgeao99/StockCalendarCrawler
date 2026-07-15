@@ -251,6 +251,7 @@ def run_fed_crawler():
         logs_ref.add({
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "FAILED",
+            "task_name": "[crawl_fed_decision_calendar] 美 연준 금리결정 수집",
             "added_count": success_count,
             "updated_count": update_count,
             "skipped_count": skip_count,

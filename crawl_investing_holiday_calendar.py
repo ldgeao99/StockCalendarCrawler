@@ -308,6 +308,7 @@ def run_holiday_crawler():
         logs_ref.add({
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "FAILED",
+            "task_name": "[crawl_investing_holiday_calendar] 글로벌 증시 휴장 수집",
             "added_count": success_count,
             "skipped_count": skip_count,
             "message": f"디버깅 모드 실패 에러 로그: {error_msg}"

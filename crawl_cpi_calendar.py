@@ -185,6 +185,7 @@ def run_cpi_crawler():
             logs_ref.add({
                 "timestamp": firestore.SERVER_TIMESTAMP,
                 "status": "FAILED",
+                "task_name": "[crawl_cpi_calendar] 美 소비자물가지수 수집",
                 "added_count": 0,
                 "skipped_count": 0,
                 "message": f"CPI 크롤러 실패 에러 로그: {error_msg}"
