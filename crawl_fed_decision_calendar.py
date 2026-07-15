@@ -233,7 +233,7 @@ def run_fed_crawler():
         log_payload = {
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "SUCCESS",
-            "task_name": "[FEDRateCrawler] 美 연준 금리결정 수집",
+            "task_name": "[crawl_fed_decision_calendar] 美 연준 금리결정 수집",
             "added_count": success_count,
             "updated_count": update_count,
             "skipped_count": skip_count,
