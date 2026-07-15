@@ -1,4 +1,4 @@
-import cloudscraper
+import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import os
@@ -60,24 +60,55 @@ def run_holiday_crawler():
     skip_count = 0
 
     try:
-        print("🌐 1. 인베스팅닷컴에 보안 우회 요청을 전송하는 중...")
-        scraper = cloudscraper.create_scraper(
-            delay=10,
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'mobile': False
-            }
-        )
+        print("🌐 1. 인베스팅닷컴에 보안 우회 및 브라우저 위장 요청 전송하는 중...")
 
-        response = scraper.get(url)
-        response.encoding = 'utf-8'
+        # 💡 [보정 핵심] Accept-Encoding 헤더를 명시적으로 비워서 원문(Raw HTML)을 디코딩 깨짐 없이 즉각 반환받도록 제어합니다.
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Referer": "https://www.google.com/",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "cross-site",
+            "Sec-Fetch-User": "?1"
+        }
+
+        class SSLAdapter(requests.adapters.HTTPAdapter):
+            def init_poolmanager(self, *args, **kwargs):
+                context = ssl.create_default_context()
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                context.set_ciphers('DEFAULT:@SECLEVEL=0')
+                kwargs['ssl_context'] = context
+                return super(SSLAdapter, self).init_poolmanager(*args, **kwargs)
+
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        session = requests.Session()
+        session.mount("https://", SSLAdapter())
+
+        response = session.get(url, headers=headers, verify=False, timeout=15)
+
+        # 💡 [보정 핵심] 깨짐 방지를 위해 인코딩을 명시하고, 압축 해제 메커니즘이 포함된 response.text를 활용하되 오류 시 UTF-8로 강제 디코딩합니다.
+        try:
+            html_content = response.content.decode('utf-8')
+        except UnicodeDecodeError:
+            response.encoding = 'utf-8'
+            html_content = response.text
 
         if response.status_code != 200:
             raise Exception(f"HTTP 요청 실패 (상태 코드: {response.status_code})")
-        print(f"📡 HTTP 응답 성공 (코드: {response.status_code}) | 데이터 길이: {len(response.text)} bytes")
+        print(f"📡 HTTP 응답 성공 (코드: {response.status_code}) | 데이터 길이: {len(html_content)} bytes")
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        # 💡 [디버깅 추가] 깨짐 상태가 개선되었는지 첫 150자만 테스트 출력해봅니다.
+        print(f"🔎 HTML 서두 테스트 (정상 여부 검증용): {html_content[:150].strip()}...")
+
+        soup = BeautifulSoup(html_content, "html.parser")
 
         print("\n🔍 2. HTML 내 표 구조(tbody) 탐색 시도...")
         tbody = soup.find("tbody")
@@ -89,7 +120,7 @@ def run_holiday_crawler():
 
         if not tbody:
             print("⚠️ [위험] tbody 요소를 전혀 찾지 못했습니다. 상위 1000자 HTML 스냅샷을 출력합니다:")
-            print(f"{response.text[:1000]}")
+            print(f"{html_content[:1000]}")
             raise Exception("휴장 일정의 tbody 요소를 찾을 수 없습니다.")
 
         rows = tbody.find_all("tr")
@@ -211,14 +242,13 @@ def run_holiday_crawler():
 
             final_event_name = ", ".join(holiday_details_list) + " 증시 휴장"
 
-            # 💡 [요구사항 반영] detail 정보는 이제 완벽하게 빈 문자열로 주입합니다.
             final_detail = ""
 
             # 파이어베이스 중복 조회
             existing_docs = events_ref.where(
                 filter=FieldFilter("date", "==", target_date)
             ).where(
-                filter=FieldFilter("category", "==", "휴장")  # 💡 [요구사항 반영] 카테고리 조회를 '휴장'으로 수행합니다.
+                filter=FieldFilter("category", "==", "휴장")
             ).get()
 
             print(f"\n  [DB 작업] 날짜: {target_date} | 대상: {final_event_name}")
@@ -227,7 +257,7 @@ def run_holiday_crawler():
                 doc = existing_docs[0]
                 existing_data = doc.to_dict()
 
-                # 완전히 동일한 정보인 경우 업데이트 건너뛰기
+                # 완전히 동일한 정보인 경우 업데이트 트랜잭션 건너뛰기
                 if final_event_name == existing_data.get("eventName") and final_detail == existing_data.get("detail"):
                     print(f"     ⏭️  동일한 데이터가 이미 존재합니다. (클라우드 업데이트 건너뜀)")
                     skip_count += 1
@@ -243,7 +273,7 @@ def run_holiday_crawler():
             else:
                 payload = {
                     "date": target_date,
-                    "category": "휴장",  # 💡 [요구사항 반영] 카테고리를 '휴장'으로 지정하여 등록합니다.
+                    "category": "휴장",
                     "eventName": final_event_name,
                     "detail": final_detail,
                     "relatedStocks": "",
