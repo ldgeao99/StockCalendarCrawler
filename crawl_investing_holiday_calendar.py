@@ -45,6 +45,7 @@ def run_holiday_crawler():
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🚀 글로벌 증시 휴장 크롤러 가동 (디버깅 모드)")
     print("=" * 60)
 
+    # 요청 타겟 URL
     url = "https://kr.investing.com/holiday-calendar/"
 
     target_countries = {
@@ -62,7 +63,7 @@ def run_holiday_crawler():
     try:
         print("🌐 1. 인베스팅닷컴에 보안 우회 및 브라우저 위장 요청 전송하는 중...")
 
-        # 💡 [보정 핵심] Accept-Encoding 헤더를 명시적으로 비워서 원문(Raw HTML)을 디코딩 깨짐 없이 즉각 반환받도록 제어합니다.
+        # Accept-Encoding 헤더를 명시적으로 비워서 원문(Raw HTML)을 디코딩 깨짐 없이 즉각 반환받도록 제어합니다.
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -94,7 +95,7 @@ def run_holiday_crawler():
 
         response = session.get(url, headers=headers, verify=False, timeout=15)
 
-        # 💡 [보정 핵심] 깨짐 방지를 위해 인코딩을 명시하고, 압축 해제 메커니즘이 포함된 response.text를 활용하되 오류 시 UTF-8로 강제 디코딩합니다.
+        # 깨짐 방지를 위해 인코딩을 명시하고, 압축 해제 메커니즘이 포함된 response.text를 활용하되 오류 시 UTF-8로 강제 디코딩합니다.
         try:
             html_content = response.content.decode('utf-8')
         except UnicodeDecodeError:
@@ -105,7 +106,7 @@ def run_holiday_crawler():
             raise Exception(f"HTTP 요청 실패 (상태 코드: {response.status_code})")
         print(f"📡 HTTP 응답 성공 (코드: {response.status_code}) | 데이터 길이: {len(html_content)} bytes")
 
-        # 💡 [디버깅 추가] 깨짐 상태가 개선되었는지 첫 150자만 테스트 출력해봅니다.
+        # HTML 서두 정상 출력 검증
         print(f"🔎 HTML 서두 테스트 (정상 여부 검증용): {html_content[:150].strip()}...")
 
         soup = BeautifulSoup(html_content, "html.parser")
@@ -244,6 +245,9 @@ def run_holiday_crawler():
 
             final_detail = ""
 
+            # 💡 [요구사항 반영] 휴장 일정의 경우 eventName 오른쪽에 링크 이동이 필요 없으므로 url 필드를 비워둡니다.
+            final_url = ""
+
             # 파이어베이스 중복 조회
             existing_docs = events_ref.where(
                 filter=FieldFilter("date", "==", target_date)
@@ -258,7 +262,8 @@ def run_holiday_crawler():
                 existing_data = doc.to_dict()
 
                 # 완전히 동일한 정보인 경우 업데이트 트랜잭션 건너뛰기
-                if final_event_name == existing_data.get("eventName") and final_detail == existing_data.get("detail"):
+                if final_event_name == existing_data.get("eventName") and final_detail == existing_data.get(
+                        "detail") and final_url == existing_data.get("url"):
                     print(f"     ⏭️  동일한 데이터가 이미 존재합니다. (클라우드 업데이트 건너뜀)")
                     skip_count += 1
                     continue
@@ -266,7 +271,7 @@ def run_holiday_crawler():
                 doc.reference.update({
                     "eventName": final_event_name,
                     "detail": final_detail,
-                    "url": url
+                    "url": final_url
                 })
                 success_count += 1
                 print(f"     🔄  내용 변경 감지! 파이어베이스 기존 문서를 성공적으로 업데이트했습니다.")
@@ -277,7 +282,7 @@ def run_holiday_crawler():
                     "eventName": final_event_name,
                     "detail": final_detail,
                     "relatedStocks": "",
-                    "url": url
+                    "url": final_url
                 }
                 events_ref.add(payload)
                 success_count += 1
