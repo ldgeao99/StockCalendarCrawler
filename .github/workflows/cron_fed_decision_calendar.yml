@@ -1,4 +1,4 @@
-name: FOMC Fed Decision Crawler (Monthly)
+name: crawl_fed_decision_calendar (Monthly)
 
 on:
   schedule:
