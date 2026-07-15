@@ -31,4 +31,4 @@ jobs:
         # 파이어베이스 인증 키가 파일 형태로 존재하지 않고 GitHub Secrets에 기재되어 있을 경우에 대비한 환경 변수 바인딩입니다.
         GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON_PATH || 'stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json' }}
       run: |
-        python crawl_investing_fed_decision.py
+        python crawl_fed_decision_calendar.py
