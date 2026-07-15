@@ -12,7 +12,7 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 # 정수 변환 제한 확장
 sys.set_int_max_str_digits(10000)
 
-# 💡 [파이어베이스 엔진 장착] 환경 설정 및 클라이언트 초기화 복구
+# 파이어베이스 엔진 초기화
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json"
 db = firestore.Client()
 events_ref = db.collection("events")
@@ -177,23 +177,19 @@ def run_fed_crawler():
                 print(f"  [{idx:02d}] {ev['raw_info']} (대상 연도: {ev['year']})")
         print("-" * 60)
 
-        # 💡 [파이어베이스 로직 전면 복구] 데이터베이스 업로드 및 중복/갱신 판별 작업
         print("\n🔥 4. 파이어베이스 Firestore 데이터베이스 업로드 작업 시작...")
         print("=" * 60)
 
-        # 지정 사양 동기화 규격
         category_name = "일반"
         final_event_name = "FED 연준 금리결정"
 
         for ev in all_parsed_events:
-            # Firestore 적재용 날짜 형식 정규화 (예: '2026-01-28')
             clean_m = ev["month"].replace("월", "")
             clean_d = ev["days"].replace("일", "")
             db_date_str = f"{ev['year']}-{clean_m}-{clean_d}"
 
             final_detail = "미국 FOMC 회의 및 연방공개시장위원회 금리결정 일정입니다."
 
-            # 중복 파쇄 실시간 조회 쿼리
             existing_docs = events_ref.where(
                 filter=FieldFilter("date", "==", db_date_str)
             ).where(
@@ -206,13 +202,11 @@ def run_fed_crawler():
                 doc = existing_docs[0]
                 existing_data = doc.to_dict()
 
-                # 데이터가 완전 일치하면 쓰기 패스
                 if final_detail == existing_data.get("detail"):
                     print(f"⏭️  [중복 스킵] 날짜: {db_date_str} | 이미 존재합니다.")
                     skip_count += 1
                     continue
 
-                # 세부 데이터 변동 발생 시 업데이트
                 doc.reference.update({
                     "detail": final_detail,
                     "url": ""
@@ -220,7 +214,6 @@ def run_fed_crawler():
                 update_count += 1
                 print(f"🔄  [정보 업데이트] 날짜: {db_date_str} | 세부 내용을 업데이트했습니다.")
             else:
-                # 완전 신규인 경우 컬렉션 추가
                 payload = {
                     "date": db_date_str,
                     "category": category_name,
@@ -233,11 +226,10 @@ def run_fed_crawler():
                 success_count += 1
                 print(f"✅  [신규 삽입] 날짜: {db_date_str} | 금리결정 일정을 신규 등록했습니다.")
 
-        # 통합 마감 로그 기록
         log_payload = {
             "timestamp": firestore.SERVER_TIMESTAMP,
             "status": "SUCCESS",
-            "task_name": "[crawl_fed_decision_calendar] 美 연준 금리결정 수집",
+            "task_name": "[FEDRateCrawler] 美 연준 금리결정 수집",
             "added_count": success_count,
             "updated_count": update_count,
             "skipped_count": skip_count,

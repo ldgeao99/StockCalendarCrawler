@@ -24,11 +24,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 google-cloud-firestore urllib3
 
-    # 🔑 [필수 추가] 파이어베이스 인증용 JSON 키 복원 단계를 주입합니다.
     - name: Decode Firebase Key
       run: |
         echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}" | base64 --decode > stockcalender-13042-firebase-adminsdk-fbsvc-18b1748d9a.json
 
     - name: Run FED Decision Crawler
       run: |
-        python crawl_investing_fed_decision.py
+        # 🎯 요구하신 파일명으로 최종 매칭 완료했습니다.
+        python crawl_fed_decision_calendar.py
