@@ -188,7 +188,8 @@ def run_fed_crawler():
             clean_d = ev["days"].replace("일", "")
             db_date_str = f"{ev['year']}-{clean_m}-{clean_d}"
 
-            final_detail = "미국 FOMC 회의 및 연방공개시장위원회 금리결정 일정입니다."
+            # 💡 [요구사항 반영] 세부 내용은 빈 문자열("")로 저장합니다.
+            final_detail = ""
 
             existing_docs = events_ref.where(
                 filter=FieldFilter("date", "==", db_date_str)
@@ -202,18 +203,21 @@ def run_fed_crawler():
                 doc = existing_docs[0]
                 existing_data = doc.to_dict()
 
+                # detail이 이미 빈 문자열로 일치하면 쓰기 생략(중복 스킵)
                 if final_detail == existing_data.get("detail"):
                     print(f"⏭️  [중복 스킵] 날짜: {db_date_str} | 이미 존재합니다.")
                     skip_count += 1
                     continue
 
+                # 기존 내용이 채워져 있었다면 비우는 업데이트 실행
                 doc.reference.update({
                     "detail": final_detail,
                     "url": ""
                 })
                 update_count += 1
-                print(f"🔄  [정보 업데이트] 날짜: {db_date_str} | 세부 내용을 업데이트했습니다.")
+                print(f"🔄  [정보 업데이트] 날짜: {db_date_str} | 세부 내용을 비웠습니다.")
             else:
+                # 완전 신규인 경우 컬렉션 추가
                 payload = {
                     "date": db_date_str,
                     "category": category_name,
