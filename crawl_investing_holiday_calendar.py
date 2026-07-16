@@ -49,11 +49,20 @@ def run_holiday_crawler():
     url = "https://kr.investing.com/holiday-calendar/"
 
     target_countries = {
-        "대한민국": "한국",
+        "한국": "한국",
         "미국": "미국",
         "중국": "중국",
         "대만": "대만",
         "일본": "일본"
+    }
+
+    # 💡 [요구사항 반영] 국가별 정렬 우선순위 스코어 매핑 선언
+    country_sort_priority = {
+        "한국": 0,
+        "미국": 1,
+        "중국": 2,
+        "대만": 3,
+        "일본": 4
     }
 
     # 예외 발생 시 except 블록에서 안전하게 참조할 수 있도록 카운트 변수를 최상단에 미리 선언
@@ -63,7 +72,6 @@ def run_holiday_crawler():
     try:
         print("🌐 1. 인베스팅닷컴에 보안 우회 및 브라우저 위장 요청 전송하는 중...")
 
-        # Accept-Encoding 헤더를 명시적으로 비워서 원문(Raw HTML)을 디코딩 깨짐 없이 즉각 반환받도록 제어합니다.
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -95,7 +103,6 @@ def run_holiday_crawler():
 
         response = session.get(url, headers=headers, verify=False, timeout=15)
 
-        # 깨짐 방지를 위해 인코딩을 명시하고, 압축 해제 메커니즘이 포함된 response.text를 활용하되 오류 시 UTF-8로 강제 디코딩합니다.
         try:
             html_content = response.content.decode('utf-8')
         except UnicodeDecodeError:
@@ -106,7 +113,6 @@ def run_holiday_crawler():
             raise Exception(f"HTTP 요청 실패 (상태 코드: {response.status_code})")
         print(f"📡 HTTP 응답 성공 (코드: {response.status_code}) | 데이터 길이: {len(html_content)} bytes")
 
-        # HTML 서두 정상 출력 검증
         print(f"🔎 HTML 서두 테스트 (정상 여부 검증용): {html_content[:150].strip()}...")
 
         soup = BeautifulSoup(html_content, "html.parser")
@@ -114,8 +120,7 @@ def run_holiday_crawler():
         print("\n🔍 2. HTML 내 표 구조(tbody) 탐색 시도...")
         tbody = soup.find("tbody")
         if not tbody:
-            table = soup.find("table", {"id": "holidayCalendarTable"}) or soup.find("table",
-                                                                                    class_=re.compile(r"genTbl"))
+            table = soup.find("table", {"id": "holidayCalendarTable"}) or soup.find("table", class_=re.compile(r"genTbl"))
             if table:
                 tbody = table.find("tbody")
 
@@ -149,7 +154,7 @@ def run_holiday_crawler():
             if not last_valid_date_str:
                 continue
 
-            # B. 국가 데이터 가공 (a 태그 우선 구조 완전 대응)
+            # B. 국가 데이터 가공
             country_td = cols[1]
             country_name = ""
 
@@ -168,7 +173,7 @@ def run_holiday_crawler():
             else:
                 country_name = clean_text(country_td.text)
 
-            # C. 타켓 국가 필터링 검사
+            # C. 타겟 국가 필터링 검사
             matched_country_short = None
             for target_k, short_v in target_countries.items():
                 if target_k in country_name:
@@ -179,8 +184,7 @@ def run_holiday_crawler():
             holiday_reason = clean_text(cols[3].text)
 
             status_icon = "🎯 [매칭성공]" if matched_country_short else "⏭️ [스킵대상]"
-            print(
-                f"  {status_icon} 행 #{idx:<3} | 국가: {country_name:<7} | 거래소: {market_name:<15} | 사유: {holiday_reason}")
+            print(f"  {status_icon} 행 #{idx:<3} | 국가: {country_name:<7} | 거래소: {market_name:<15} | 사유: {holiday_reason}")
 
             if not matched_country_short or not holiday_reason:
                 continue
@@ -205,6 +209,12 @@ def run_holiday_crawler():
                 print(f"     ➡️ ⚠️ 중복 데이터 감지되어 스킵합니다.")
 
         print("-" * 60)
+
+        # 💡 [요구사항 반영] 메모리에 수집된 그룹 내부 국가 정렬 로직 집행
+        print("\n🔮 2-1. [우선순위 정렬 연산] 한국 > 미국 > 중국 > 대만 > 일본 정렬 규칙 가동...")
+        for target_date, holiday_list in daily_groups.items():
+            if holiday_list:
+                holiday_list.sort(key=lambda x: country_sort_priority.get(x["country"], 99))
 
         print(f"\n📦 3. 메모리 내 최종 그룹화 결과 (총 {len(daily_groups)}일의 일정 수집됨)")
         for d, items in daily_groups.items():
@@ -242,10 +252,7 @@ def run_holiday_crawler():
                 holiday_details_list.append(f"{item['country']}({item['reason']})")
 
             final_event_name = ", ".join(holiday_details_list) + " 증시 휴장"
-
             final_detail = ""
-
-            # 💡 [요구사항 반영] 휴장 일정의 경우 eventName 오른쪽에 링크 이동이 필요 없으므로 url 필드를 비워둡니다.
             final_url = ""
 
             # 파이어베이스 중복 조회
@@ -262,8 +269,7 @@ def run_holiday_crawler():
                 existing_data = doc.to_dict()
 
                 # 완전히 동일한 정보인 경우 업데이트 트랜잭션 건너뛰기
-                if final_event_name == existing_data.get("eventName") and final_detail == existing_data.get(
-                        "detail") and final_url == existing_data.get("url"):
+                if final_event_name == existing_data.get("eventName") and final_detail == existing_data.get("detail") and final_url == existing_data.get("url"):
                     print(f"     ⏭️  동일한 데이터가 이미 존재합니다. (클라우드 업데이트 건너뜀)")
                     skip_count += 1
                     continue
